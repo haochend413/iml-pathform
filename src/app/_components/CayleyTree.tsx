@@ -1,16 +1,16 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import * as d3 from "d3";
 import Vertex from "./Vertex";
 import Edge from "./Edge";
+import styles from "./components.module.css";
 
-export interface TreeNode {
+interface TreeNode {
   id: string;
   children: TreeNode[];
 }
 
-// Generates a quadratic Cayley tree: each node gets 4 children until depth reaches 0.
-export const generateTree = (depth: number, parentId = "root"): TreeNode => {
+const generateTree = (depth: number, parentId = "root"): TreeNode => {
   if (depth === 0) return { id: parentId, children: [] };
 
   return {
@@ -36,98 +36,122 @@ interface LinkPosition {
 }
 
 const CayleyTree: React.FC = () => {
-  // Arrays of nodes and links with positions computed via D3
   const [nodes, setNodes] = useState<NodePosition[]>([]);
   const [links, setLinks] = useState<LinkPosition[]>([]);
-
-  // Interaction state for vertices and edges.
   const [highlightedNode, setHighlightedNode] = useState<string | null>(null);
   const [shinedNode, setShinedNode] = useState<string | null>(null);
-  const [highlightedEdge, setHighlightedEdge] = useState<string | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const gRef = useRef<SVGGElement | null>(null);
 
   useEffect(() => {
+    if (!svgRef.current || !gRef.current) return;
+
     const width = 800;
     const height = 600;
 
-    // Create a D3 hierarchy from our tree data.
     const root = d3.hierarchy<TreeNode>(treeData);
-    // Use d3.tree to compute layout; we set the size to the SVG dimensions.
-    const treeLayout = d3.tree<TreeNode>().size([width, height]);
-    treeLayout(root);
+    const linksData = root.links();
+    const nodesData = root.descendants();
 
-    // Use non-null assertion operator (!) to tell TypeScript that root.x and root.y are defined.
-    const offsetX = width / 2 - root.x!;
-    const offsetY = height / 2 - root.y!;
+    const simulation = d3
+      .forceSimulation(nodesData)
+      .force(
+        "link",
+        d3
+          .forceLink(linksData)
+          .id((d: any) => d.data.id)
+          .distance(100)
+      )
+      .force("charge", d3.forceManyBody().strength(-200))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .on("tick", ticked);
 
-    // Map each d3 node to our NodePosition type.
-    const computedNodes: NodePosition[] = root.descendants().map((d) => ({
-      id: d.data.id,
-      x: d.x! + offsetX,
-      y: d.y! + offsetY,
-    }));
+    function ticked() {
+      setNodes(
+        nodesData.map((d) => ({
+          id: d.data.id,
+          x: d.x!,
+          y: d.y!,
+        }))
+      );
 
-    // Map each link from parent to child.
-    const computedLinks: LinkPosition[] = root.links().map((link) => ({
-      id: `${link.source.data.id}->${link.target.data.id}`,
-      source: {
-        id: link.source.data.id,
-        x: link.source.x! + offsetX,
-        y: link.source.y! + offsetY,
-      },
-      target: {
-        id: link.target.data.id,
-        x: link.target.x! + offsetX,
-        y: link.target.y! + offsetY,
-      },
-    }));
+      setLinks(
+        linksData.map((link) => ({
+          id: `${link.source.data.id}->${link.target.data.id}`,
+          source: {
+            id: link.source.data.id,
+            x: link.source.x!,
+            y: link.source.y!,
+          },
+          target: {
+            id: link.target.data.id,
+            x: link.target.x!,
+            y: link.target.y!,
+          },
+        }))
+      );
+    }
 
-    setNodes(computedNodes);
-    setLinks(computedLinks);
+    simulation.alpha(1).restart();
+
+    // Fix: Explicitly define D3 selection types
+    const svg = d3.select<SVGSVGElement, unknown>(svgRef.current);
+    const g = d3.select<SVGGElement, unknown>(gRef.current);
+
+    // Fix: Correctly define zoom behavior
+    const zoom = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.5, 3]) // Zoom between 50% and 300%
+      .on("zoom", (event) => {
+        g.attr("transform", event.transform.toString()); // Apply zoom & pan
+      });
+
+    // Fix: Ensure zoom is applied safely
+    svg.call(
+      zoom as unknown as (
+        selection: d3.Selection<SVGSVGElement, unknown, null, undefined>
+      ) => void
+    );
   }, []);
 
-  // Callback when a vertex is hovered.
-  const handleVertexHover = (id: string, isHovered: boolean) => {
+  const handleHover = (id: string, isHovered: boolean) => {
     setHighlightedNode(isHovered ? id : null);
   };
 
-  // Callback when a vertex is clicked.
-  const handleVertexClick = (id: string) => {
-    setShinedNode(id);
-  };
-
-  // Callback when an edge is hovered.
-  const handleEdgeHover = (id: string, isHovered: boolean) => {
-    setHighlightedEdge(isHovered ? id : null);
+  const handleClick = (id: string) => {
+    setShinedNode(id === shinedNode ? null : id);
   };
 
   return (
-    <svg width="100vw" height="500vh" style={{ border: "1px solid #ccc" }}>
-      {/* Render edges first so they appear beneath vertices */}
-      {links.map((link) => (
-        <Edge
-          key={link.id}
-          sourceX={link.source.x}
-          sourceY={link.source.y}
-          targetX={link.target.x}
-          targetY={link.target.y}
-          onHover={(isHovered: boolean) => handleEdgeHover(link.id, isHovered)}
-          isHighlighted={highlightedEdge === link.id}
-        />
-      ))}
-      {/* Render vertices */}
-      {nodes.map((node) => (
-        <Vertex
-          key={node.id}
-          id={node.id}
-          x={node.x}
-          y={node.y}
-          onClick={handleVertexClick}
-          onHover={handleVertexHover}
-          isHighlighted={highlightedNode === node.id}
-          isShined={shinedNode === node.id}
-        />
-      ))}
-    </svg>
+    <div className={styles.cayleyContainer}>
+      <svg ref={svgRef} width="100vw" height="100vh" className={styles.cayley}>
+        <g ref={gRef}>
+          {links.map((link) => (
+            <Edge
+              key={link.id}
+              sourceX={link.source.x}
+              sourceY={link.source.y}
+              targetX={link.target.x}
+              targetY={link.target.y}
+              onHover={(hovered) => handleHover(link.id, hovered)}
+              isHighlighted={highlightedNode === link.id}
+            />
+          ))}
+          {nodes.map((node) => (
+            <Vertex
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              onClick={handleClick}
+              onHover={handleHover}
+              isHighlighted={highlightedNode === node.id}
+              isShined={shinedNode === node.id}
+            />
+          ))}
+        </g>
+      </svg>
+    </div>
   );
 };
 

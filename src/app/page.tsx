@@ -3,7 +3,7 @@ import CayleyTree from "./_components/CayleyTree";
 
 const Home = () => {
   return (
-    <div>
+    <div className="cayley">
       <CayleyTree />
     </div>
   );
