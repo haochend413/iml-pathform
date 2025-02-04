@@ -10,6 +10,7 @@ interface TreeNode {
   children: TreeNode[];
 }
 
+// recursive function to generate tree data;
 const generateTree = (depth: number, parentId = "root"): TreeNode => {
   if (depth === 0) return { id: parentId, children: [] };
 
@@ -22,6 +23,8 @@ const generateTree = (depth: number, parentId = "root"): TreeNode => {
 };
 
 const treeData: TreeNode = generateTree(3);
+
+//interface for d3 setup;
 
 interface NodePosition {
   id: string;
@@ -53,6 +56,7 @@ const CayleyTree: React.FC = () => {
     const linksData = root.links();
     const nodesData = root.descendants();
 
+    //force simulation
     const simulation = d3
       .forceSimulation(nodesData)
       .force(
@@ -94,6 +98,8 @@ const CayleyTree: React.FC = () => {
 
     simulation.alpha(1).restart();
 
+    // zoom and panning functions
+
     // Fix: Explicitly define D3 selection types
     const svg = d3.select<SVGSVGElement, unknown>(svgRef.current);
     const g = d3.select<SVGGElement, unknown>(gRef.current);
@@ -101,7 +107,7 @@ const CayleyTree: React.FC = () => {
     // Fix: Correctly define zoom behavior
     const zoom = d3
       .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.5, 3]) // Zoom between 50% and 300%
+      .scaleExtent([0.2, 5]) // Zoom between 50% and 300%
       .on("zoom", (event) => {
         g.attr("transform", event.transform.toString()); // Apply zoom & pan
       });
@@ -114,6 +120,7 @@ const CayleyTree: React.FC = () => {
     );
   }, []);
 
+  //edge/vertex hover & click effects;
   const handleHover = (id: string, isHovered: boolean) => {
     setHighlightedNode(isHovered ? id : null);
   };
