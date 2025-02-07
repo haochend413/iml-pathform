@@ -10,7 +10,7 @@ interface TreeNode {
   children: TreeNode[];
 }
 
-// recursive function to generate tree data;
+// Recursive function to generate tree data.
 const generateTree = (depth: number, parentId = "root"): TreeNode => {
   if (depth === 0) return { id: parentId, children: [] };
 
@@ -24,8 +24,7 @@ const generateTree = (depth: number, parentId = "root"): TreeNode => {
 
 const treeData: TreeNode = generateTree(3);
 
-//interface for d3 setup;
-
+// Interfaces for node and link positions.
 interface NodePosition {
   id: string;
   x: number;
@@ -49,78 +48,80 @@ const CayleyTree: React.FC = () => {
   useEffect(() => {
     if (!svgRef.current || !gRef.current) return;
 
-    const width = 800;
-    const height = 600;
+    // Set dimensions for the radial layout.
+    const width = 928;
+    const height = 928;
 
-    const root = d3.hierarchy<TreeNode>(treeData);
-    const linksData = root.links();
-    const nodesData = root.descendants();
+    // centers
+    const cx = width * 0.5;
+    const cy = height * 0.54;
+    const radius = Math.min(width, height) / 2 - 80;
 
-    //force simulation
-    const simulation = d3
-      .forceSimulation(nodesData)
-      .force(
-        "link",
-        d3
-          .forceLink(linksData)
-          .id((d: any) => d.data.id)
-          .distance(100)
-      )
-      .force("charge", d3.forceManyBody().strength(-200))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .on("tick", ticked);
+    // Create a radial cluster layout.
+    const cluster = d3
+      .cluster<TreeNode>()
+      .size([2 * Math.PI, radius])
+      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
 
-    function ticked() {
-      setNodes(
-        nodesData.map((d) => ({
-          id: d.data.id,
-          x: d.x!,
-          y: d.y!,
-        }))
-      );
+    // Build the hierarchy and apply the cluster layout.
+    const root = cluster(d3.hierarchy(treeData));
 
-      setLinks(
-        linksData.map((link) => ({
-          id: `${link.source.data.id}->${link.target.data.id}`,
-          source: {
-            id: link.source.data.id,
-            x: link.source.x!,
-            y: link.source.y!,
-          },
-          target: {
-            id: link.target.data.id,
-            x: link.target.x!,
-            y: link.target.y!,
-          },
-        }))
-      );
+    // Helper function to convert polar coordinates (angle in radians and radius)
+    // to Cartesian coordinates. Subtracting Math.PI/2 rotates the layout so that
+    // 0 radians is at the top.
+    function radialPoint(angle: number, r: number): [number, number] {
+      return [
+        r * Math.cos(angle - Math.PI / 2),
+        r * Math.sin(angle - Math.PI / 2),
+      ];
     }
 
-    simulation.alpha(1).restart();
+    // Compute node positions in Cartesian coordinates.
+    const nodesData = root.descendants();
+    const computedNodes: NodePosition[] = nodesData.map((d) => {
+      const [x, y] = radialPoint(d.x, d.y);
+      return {
+        id: d.data.id,
+        x: x + cx,
+        y: y + cy,
+      };
+    });
 
-    // zoom and panning functions
+    // Compute link positions as straight lines.
+    const linksData = root.links();
+    const computedLinks: LinkPosition[] = linksData.map((link) => {
+      const [sx, sy] = radialPoint(link.source.x, link.source.y);
+      const [tx, ty] = radialPoint(link.target.x, link.target.y);
+      return {
+        id: `${link.source.data.id}->${link.target.data.id}`,
+        source: { id: link.source.data.id, x: sx + cx, y: sy + cy },
+        target: { id: link.target.data.id, x: tx + cx, y: ty + cy },
+      };
+    });
 
-    // Fix: Explicitly define D3 selection types
+    // Update state.
+    setNodes(computedNodes);
+    setLinks(computedLinks);
+
+    // Setup zoom and pan.
     const svg = d3.select<SVGSVGElement, unknown>(svgRef.current);
     const g = d3.select<SVGGElement, unknown>(gRef.current);
 
-    // Fix: Correctly define zoom behavior
     const zoom = d3
       .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.2, 5]) // Zoom between 50% and 300%
+      .scaleExtent([0.2, 5])
       .on("zoom", (event) => {
-        g.attr("transform", event.transform.toString()); // Apply zoom & pan
+        g.attr("transform", event.transform.toString());
       });
 
-    // Fix: Ensure zoom is applied safely
     svg.call(
       zoom as unknown as (
         selection: d3.Selection<SVGSVGElement, unknown, null, undefined>
       ) => void
     );
-  }, []);
+  }, [treeData]);
 
-  //edge/vertex hover & click effects;
+  // Edge/vertex hover & click effects.
   const handleHover = (id: string, isHovered: boolean) => {
     setHighlightedNode(isHovered ? id : null);
   };
